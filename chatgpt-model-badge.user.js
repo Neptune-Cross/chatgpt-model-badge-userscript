@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      1.6.0
+// @version      1.7.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮下方。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,12 +18,13 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '1.6.0';
+  const SCRIPT_VERSION = '1.7.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
   const TURN_TEXT_ATTR = 'data-cgpt-local-model-badge-text';
   const TURN_SOURCE_ATTR = 'data-cgpt-local-model-badge-source';
+  const TURN_MESSAGE_ID_ATTR = 'data-cgpt-local-model-badge-message-id';
   const STYLE_TEXT = `
     [${TOOLBAR_ATTR}="true"] {
       position: relative !important;
@@ -66,8 +67,7 @@
   ];
 
   let scanTimer = 0;
-  let latestAssistantUsageTexts = [];
-  let latestSingleAssistantUsageText = '';
+  const usageTextByMessageId = new Map();
   let observerStarted = false;
 
   console.info(`[ChatGPT 模型标记] 已运行 v${SCRIPT_VERSION}`);
@@ -105,14 +105,16 @@
 
     response.clone().text()
       .then((text) => {
-        const usageTexts = extractUsageTextsFromResponseText(text);
-        if (usageTexts.some(Boolean)) {
-          if (usageTexts.length > 1) {
-            latestAssistantUsageTexts = usageTexts;
-            latestSingleAssistantUsageText = '';
-          } else {
-            latestSingleAssistantUsageText = usageTexts[0] || '';
-          }
+        const usageEntries = extractUsageEntriesFromResponseText(text);
+        let changed = false;
+
+        for (const entry of usageEntries) {
+          if (!entry.messageId || !entry.usageText) continue;
+          usageTextByMessageId.set(entry.messageId, entry.usageText);
+          changed = true;
+        }
+
+        if (changed) {
           scheduleScan();
         }
       })
@@ -125,7 +127,7 @@
     return '';
   }
 
-  function extractUsageTextsFromResponseText(text) {
+  function extractUsageEntriesFromResponseText(text) {
     const messages = [];
 
     for (const payload of parseJsonPayloads(text)) {
@@ -133,7 +135,10 @@
     }
 
     return dedupeMessages(messages)
-      .map(getUsageTextFromMessage);
+      .map((message) => ({
+        messageId: normalizeText(message?.id),
+        usageText: getUsageTextFromMessage(message),
+      }));
   }
 
   function dedupeMessages(messages) {
@@ -207,6 +212,10 @@
     const metadata = message?.metadata || {};
     const rawModel = metadata.model_slug || '';
 
+    return getUsageTextFromModelSlug(rawModel);
+  }
+
+  function getUsageTextFromModelSlug(rawModel) {
     const modelName = formatModelName(rawModel);
     return modelName ? `已使用 ${modelName}` : '';
   }
@@ -363,6 +372,19 @@
     return node?.closest?.('article, section[data-testid^="conversation-turn"], [data-testid*="conversation-turn"]') || null;
   }
 
+  function getTurnMessageNode(turn) {
+    return turn.querySelector('[data-message-author-role="assistant"][data-message-id]')
+      || turn.querySelector('[data-message-id]');
+  }
+
+  function getTurnMessageId(turn) {
+    return normalizeText(getTurnMessageNode(turn)?.getAttribute('data-message-id'));
+  }
+
+  function getTurnModelSlug(turn) {
+    return normalizeText(getTurnMessageNode(turn)?.getAttribute('data-message-model-slug'));
+  }
+
   function extractUsageText(text) {
     const normalized = normalizeText(text);
     const chineseMatch = normalized.match(/已使用\s+((?:GPT|gpt|O|o)[^。]*?)(?=重试|已使用|$)/i);
@@ -399,10 +421,22 @@
   }
 
   function getTurnUsageText(turn) {
+    const directText = getUsageTextFromModelSlug(getTurnModelSlug(turn));
+    if (directText) return directText;
+
+    const currentMessageId = getTurnMessageId(turn);
+    if (currentMessageId && usageTextByMessageId.has(currentMessageId)) {
+      return usageTextByMessageId.get(currentMessageId);
+    }
+
     const text = normalizeText(turn.getAttribute(TURN_TEXT_ATTR));
     const source = normalizeText(turn.getAttribute(TURN_SOURCE_ATTR));
+    const storedMessageId = normalizeText(turn.getAttribute(TURN_MESSAGE_ID_ATTR));
+    if (text && source && currentMessageId && storedMessageId === currentMessageId) return text;
+
+    clearTurnUsageText(turn);
     if (!source && isAmbiguousLegacyText(text)) return CONFIG.fallbackText;
-    return text || CONFIG.fallbackText;
+    return CONFIG.fallbackText;
   }
 
   function isAmbiguousLegacyText(text) {
@@ -411,14 +445,21 @@
 
   function setTurnUsageText(turn, usageText, source) {
     const text = normalizeText(usageText);
+    const messageId = getTurnMessageId(turn);
     if (!text) {
-      turn.removeAttribute(TURN_TEXT_ATTR);
-      turn.removeAttribute(TURN_SOURCE_ATTR);
+      clearTurnUsageText(turn);
       return;
     }
 
     turn.setAttribute(TURN_TEXT_ATTR, text);
     turn.setAttribute(TURN_SOURCE_ATTR, source || 'detected');
+    if (messageId) turn.setAttribute(TURN_MESSAGE_ID_ATTR, messageId);
+  }
+
+  function clearTurnUsageText(turn) {
+    turn.removeAttribute(TURN_TEXT_ATTR);
+    turn.removeAttribute(TURN_SOURCE_ATTR);
+    turn.removeAttribute(TURN_MESSAGE_ID_ATTR);
   }
 
   function placeBadge(turn, toolbar, button) {
@@ -465,22 +506,16 @@
     button.addEventListener('pointerenter', updateFromTooltip, true);
   }
 
-  function ensureBadge(turn, assistantIndex, assistantCount) {
+  function ensureBadge(turn) {
     const button = getAnchorButton(turn);
     if (!button) return;
 
-    ensureBadgeForButton(turn, button, assistantIndex, assistantCount);
+    ensureBadgeForButton(turn, button);
   }
 
-  function ensureBadgeForButton(turn, button, assistantIndex, assistantCount) {
+  function ensureBadgeForButton(turn, button) {
     const toolbar = getReplyToolbar(turn) || getToolbarFromAnchor(button, turn);
     if (!toolbar) return;
-
-    if (latestAssistantUsageTexts[assistantIndex]) {
-      setTurnUsageText(turn, latestAssistantUsageTexts[assistantIndex], 'fetch');
-    } else if (latestSingleAssistantUsageText && assistantIndex === assistantCount - 1) {
-      setTurnUsageText(turn, latestSingleAssistantUsageText, 'fetch');
-    }
 
     bindModelButton(turn, button);
     placeBadge(turn, toolbar, button);
@@ -507,14 +542,14 @@
     const targetTurns = CONFIG.onlyLatestAssistant ? turns.slice(-1) : turns;
 
     for (const turn of targetTurns) {
-      ensureBadge(turn, turns.indexOf(turn), turns.length);
+      ensureBadge(turn);
     }
 
     for (const button of getAllAnchorButtons()) {
       const turn = getTurnForButton(button, turns);
       if (!turn) continue;
       if (CONFIG.onlyLatestAssistant && !targetTurns.includes(turn)) continue;
-      ensureBadgeForButton(turn, button, turns.indexOf(turn), turns.length);
+      ensureBadgeForButton(turn, button);
     }
 
     if (CONFIG.onlyLatestAssistant) cleanupBadges(targetTurns);
