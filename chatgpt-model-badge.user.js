@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记：GPT-5.5 Thinking
 // @namespace    local.codex.chatgpt-model-badge
-// @version      1.3.0
+// @version      1.4.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮下方。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @run-at       document-start
-// @grant        none
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (function () {
@@ -22,6 +22,33 @@
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
   const TURN_TEXT_ATTR = 'data-cgpt-local-model-badge-text';
+  const STYLE_TEXT = `
+    [${TOOLBAR_ATTR}="true"] {
+      position: relative !important;
+      overflow: visible !important;
+    }
+
+    [${BADGE_ATTR}="true"] {
+      display: flex !important;
+      flex: 0 0 100% !important;
+      align-items: center !important;
+      min-height: 18px !important;
+      margin-top: -2px !important;
+      box-sizing: border-box !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      padding-left: var(--cgpt-local-model-badge-left, 0px) !important;
+      overflow: hidden !important;
+      color: var(--text-secondary, #9b9b9b) !important;
+      font-size: 14px !important;
+      line-height: 18px !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+      opacity: 0.98 !important;
+      pointer-events: none !important;
+      user-select: none !important;
+    }
+  `;
   const ANCHOR_LABEL_PARTS = [
     '切换模型',
     '模型',
@@ -41,18 +68,28 @@
   hookFetch();
 
   function hookFetch() {
-    const originalFetch = window.fetch;
-    if (!originalFetch || originalFetch.__cgptLocalModelBadgeHooked) return;
-
-    window.fetch = async function cgptLocalModelBadgeFetch(...args) {
-      const response = await originalFetch.apply(this, args);
-      inspectFetchResponse(args[0], response);
-      return response;
-    };
-
     try {
-      window.fetch.__cgptLocalModelBadgeHooked = true;
+      const targetWindow = getPageWindow();
+      const originalFetch = targetWindow.fetch;
+      if (!originalFetch || originalFetch.__cgptLocalModelBadgeHooked) return;
+
+      targetWindow.fetch = async function cgptLocalModelBadgeFetch(...args) {
+        const response = await originalFetch.apply(this, args);
+        inspectFetchResponse(args[0], response);
+        return response;
+      };
+
+      try {
+        targetWindow.fetch.__cgptLocalModelBadgeHooked = true;
+      } catch (_) {}
     } catch (_) {}
+  }
+
+  function getPageWindow() {
+    try {
+      if (typeof unsafeWindow !== 'undefined' && unsafeWindow?.fetch) return unsafeWindow;
+    } catch (_) {}
+    return window;
   }
 
   function inspectFetchResponse(input, response) {
@@ -188,38 +225,17 @@
 
   function installStyles() {
     if (!document.documentElement) return;
-    if (document.getElementById(STYLE_ID)) return;
 
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      [${TOOLBAR_ATTR}="true"] {
-        position: relative !important;
-        overflow: visible !important;
-      }
+    let style = document.getElementById(STYLE_ID);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = STYLE_ID;
+      (document.head || document.documentElement).appendChild(style);
+    }
 
-      [${BADGE_ATTR}="true"] {
-        display: flex;
-        flex: 0 0 100%;
-        align-items: center;
-        min-height: 18px;
-        margin-top: -2px;
-        box-sizing: border-box;
-        width: 100%;
-        max-width: 100%;
-        padding-left: var(--cgpt-local-model-badge-left, 0px);
-        overflow: hidden;
-        color: var(--text-secondary, #9b9b9b);
-        font-size: 14px;
-        line-height: 18px;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        opacity: 0.98;
-        pointer-events: none;
-        user-select: none;
-      }
-    `;
-    document.documentElement.appendChild(style);
+    if (style.textContent !== STYLE_TEXT) {
+      style.textContent = STYLE_TEXT;
+    }
   }
 
   function normalizeText(value) {
@@ -251,6 +267,12 @@
       .filter(isVisible);
 
     return groups.find((group) => getModelButton(group)) || null;
+  }
+
+  function getAllAnchorButtons() {
+    return Array.from(document.querySelectorAll('button'))
+      .filter(isVisible)
+      .filter(isAnchorButton);
   }
 
   function getButtonName(button) {
@@ -286,6 +308,11 @@
 
   function looksLikeReplyToolbar(element, turn) {
     if (!element || element === turn || !turn.contains(element)) return false;
+    return looksLikeButtonGroup(element);
+  }
+
+  function looksLikeButtonGroup(element) {
+    if (!element) return false;
 
     const buttons = Array.from(element.querySelectorAll('button')).filter(isVisible);
     if (buttons.length < 2 || buttons.length > 14) return false;
@@ -297,18 +324,32 @@
 
   function getToolbarFromAnchor(anchor, turn) {
     const roleGroup = anchor.closest('[role="group"]');
-    if (roleGroup && turn.contains(roleGroup)) return roleGroup;
+    if (roleGroup) return roleGroup;
 
     let current = anchor.parentElement;
     let depth = 0;
 
     while (current && current !== turn && depth < 8) {
-      if (looksLikeReplyToolbar(current, turn)) return current;
+      if (looksLikeReplyToolbar(current, turn) || looksLikeButtonGroup(current)) return current;
       current = current.parentElement;
       depth += 1;
     }
 
     return anchor.parentElement;
+  }
+
+  function getTurnForButton(button, turns) {
+    const containingTurn = turns.find((turn) => turn.contains(button));
+    if (containingTurn) return containingTurn;
+
+    let previousTurn = null;
+    for (const turn of turns) {
+      const relation = turn.compareDocumentPosition(button);
+      if (relation & Node.DOCUMENT_POSITION_FOLLOWING) previousTurn = turn;
+      if (relation & Node.DOCUMENT_POSITION_PRECEDING) break;
+    }
+
+    return previousTurn;
   }
 
   function getTurnForNode(node) {
@@ -360,7 +401,7 @@
   }
 
   function placeBadge(turn, toolbar, button) {
-    let badge = turn.querySelector(`[${BADGE_ATTR}="true"]`);
+    let badge = toolbar.querySelector(`[${BADGE_ATTR}="true"]`) || turn.querySelector(`[${BADGE_ATTR}="true"]`);
     if (!badge) badge = createBadge();
 
     const toolbarRect = toolbar.getBoundingClientRect();
@@ -369,6 +410,8 @@
 
     toolbar.setAttribute(TOOLBAR_ATTR, 'true');
     toolbar.style.setProperty('--cgpt-local-model-badge-left', `${left}px`);
+    toolbar.style.removeProperty('--cgpt-local-model-badge-top');
+    toolbar.style.removeProperty('--cgpt-local-model-badge-reserve');
 
     const nextText = getTurnUsageText(turn);
     if (badge.textContent !== nextText) badge.textContent = nextText;
@@ -377,8 +420,8 @@
   }
 
   function bindModelButton(turn, button) {
-    if (button.dataset.cgptLocalModelBadgeBound === 'true') return;
-    button.dataset.cgptLocalModelBadgeBound = 'true';
+    if (button.getAttribute('data-cgpt-local-model-badge-bound') === 'true') return;
+    button.setAttribute('data-cgpt-local-model-badge-bound', 'true');
 
     const updateFromTooltip = () => {
       window.setTimeout(() => {
@@ -399,6 +442,10 @@
     const button = getAnchorButton(turn);
     if (!button) return;
 
+    ensureBadgeForButton(turn, button, assistantIndex);
+  }
+
+  function ensureBadgeForButton(turn, button, assistantIndex) {
     const toolbar = getReplyToolbar(turn) || getToolbarFromAnchor(button, turn);
     if (!toolbar) return;
 
@@ -414,8 +461,13 @@
     const kept = new Set(keptTurns);
     for (const badge of document.querySelectorAll(`[${BADGE_ATTR}="true"]`)) {
       const ownerTurn = getTurnForNode(badge);
-      if (ownerTurn && !kept.has(ownerTurn)) badge.remove();
+      if (ownerTurn && !kept.has(ownerTurn)) removeElement(badge);
     }
+  }
+
+  function removeElement(element) {
+    if (!element?.parentNode) return;
+    element.parentNode.removeChild(element);
   }
 
   function scan() {
@@ -428,6 +480,14 @@
     for (const turn of targetTurns) {
       ensureBadge(turn, turns.indexOf(turn));
     }
+
+    for (const button of getAllAnchorButtons()) {
+      const turn = getTurnForButton(button, turns);
+      if (!turn) continue;
+      if (CONFIG.onlyLatestAssistant && !targetTurns.includes(turn)) continue;
+      ensureBadgeForButton(turn, button, turns.indexOf(turn));
+    }
+
     if (CONFIG.onlyLatestAssistant) cleanupBadges(targetTurns);
   }
 
