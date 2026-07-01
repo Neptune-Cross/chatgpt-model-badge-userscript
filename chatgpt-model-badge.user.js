@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）
+// @name         ChatGPT 模型标记
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      1.8.0
-// @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮下方。
+// @version      1.9.0
+// @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮同一行右侧。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @run-at       document-start
@@ -18,7 +18,7 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '1.8.0';
+  const SCRIPT_VERSION = '1.9.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -32,15 +32,16 @@
     }
 
     [${BADGE_ATTR}="true"] {
-      display: flex !important;
-      flex: 0 0 100% !important;
+      display: inline-flex !important;
+      flex: 0 0 auto !important;
       align-items: center !important;
       min-height: 18px !important;
-      margin-top: -2px !important;
+      margin-top: 0 !important;
+      margin-left: 8px !important;
       box-sizing: border-box !important;
-      width: 100% !important;
-      max-width: 100% !important;
-      padding-left: var(--cgpt-local-model-badge-left, 0px) !important;
+      width: auto !important;
+      max-width: min(260px, 40vw) !important;
+      padding-left: 0 !important;
       overflow: hidden !important;
       color: var(--text-secondary, #9b9b9b) !important;
       font-size: 14px !important;
@@ -478,13 +479,9 @@
 
     if (!badge) badge = createBadge();
 
-    const toolbarRect = toolbar.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-    const left = Math.max(0, Math.round(buttonRect.left - toolbarRect.left));
-
     toolbar.setAttribute(TOOLBAR_ATTR, 'true');
     toolbar.setAttribute('data-cgpt-local-model-badge-version', SCRIPT_VERSION);
-    toolbar.style.setProperty('--cgpt-local-model-badge-left', `${left}px`);
+    toolbar.style.removeProperty('--cgpt-local-model-badge-left');
     toolbar.style.removeProperty('--cgpt-local-model-badge-top');
     toolbar.style.removeProperty('--cgpt-local-model-badge-reserve');
 
