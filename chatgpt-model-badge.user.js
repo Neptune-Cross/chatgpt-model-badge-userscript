@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      1.9.0
+// @version      2.0.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮同一行右侧。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,7 +18,7 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '1.9.0';
+  const SCRIPT_VERSION = '2.0.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -225,7 +225,10 @@
     const raw = normalizeText(value);
     if (!raw) return '';
 
+    if (/gpt[-_. ]?5[-_. ]?5.*pro.*thinking/i.test(raw)) return 'GPT-5.5 Pro Thinking';
+    if (/gpt[-_. ]?5[-_. ]?5.*thinking.*pro/i.test(raw)) return 'GPT-5.5 Pro Thinking';
     if (/gpt[-_. ]?5[-_. ]?5.*thinking/i.test(raw)) return 'GPT-5.5 Thinking';
+    if (/gpt[-_. ]?5[-_. ]?5.*pro/i.test(raw)) return 'GPT-5.5 Pro';
     if (/gpt[-_. ]?5[-_. ]?5/i.test(raw)) return 'GPT-5.5';
     if (/gpt[-_. ]?5.*thinking/i.test(raw)) return 'GPT-5 Thinking';
 
@@ -428,17 +431,20 @@
   }
 
   function getTurnUsageText(turn) {
+    const currentMessageId = getTurnMessageId(turn);
+    const text = stripUsagePrefix(turn.getAttribute(TURN_TEXT_ATTR));
+    const source = normalizeText(turn.getAttribute(TURN_SOURCE_ATTR));
+    const storedMessageId = normalizeText(turn.getAttribute(TURN_MESSAGE_ID_ATTR));
+
+    if (text && source === 'tooltip' && currentMessageId && storedMessageId === currentMessageId) return text;
+
     const directText = getUsageTextFromModelSlug(getTurnModelSlug(turn));
     if (directText) return directText;
 
-    const currentMessageId = getTurnMessageId(turn);
     if (currentMessageId && usageTextByMessageId.has(currentMessageId)) {
       return usageTextByMessageId.get(currentMessageId);
     }
 
-    const text = stripUsagePrefix(turn.getAttribute(TURN_TEXT_ATTR));
-    const source = normalizeText(turn.getAttribute(TURN_SOURCE_ATTR));
-    const storedMessageId = normalizeText(turn.getAttribute(TURN_MESSAGE_ID_ATTR));
     if (text && source && currentMessageId && storedMessageId === currentMessageId) return text;
 
     clearTurnUsageText(turn);
