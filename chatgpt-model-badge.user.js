@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记：GPT-5.5 Thinking
 // @namespace    local.codex.chatgpt-model-badge
-// @version      1.0.0
-// @description  在 ChatGPT 回复结束后的操作按钮下方显示本地模型标记。
+// @version      1.2.0
+// @description  在 ChatGPT 回复结束后的切换模型/重试按钮下方显示模型标记。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
 // @run-at       document-idle
@@ -13,61 +13,15 @@
   'use strict';
 
   const CONFIG = {
-    labelText: '已使用 GPT-5.5 Thinking',
+    fallbackText: '已使用 GPT-5.5 Thinking',
     onlyLatestAssistant: false,
     scanDelayMs: 120,
   };
 
   const STYLE_ID = 'cgpt-local-model-badge-style';
-  const BADGE_ROW_CLASS = 'cgpt-local-model-badge-row';
-  const BADGE_TEXT_CLASS = 'cgpt-local-model-badge-text';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
-
-  const ACTION_TEST_ID_PARTS = [
-    'copy-turn',
-    'good-response',
-    'bad-response',
-    'regenerate',
-    'share-turn',
-    'more-turn',
-    'voice',
-    'read-aloud',
-  ];
-
-  const ACTION_LABEL_PARTS = [
-    'copy',
-    '复制',
-    'good response',
-    'bad response',
-    'like',
-    'dislike',
-    '赞',
-    '踩',
-    '重新生成',
-    '重试',
-    'regenerate',
-    'share',
-    '分享',
-    'more',
-    '更多',
-    'read aloud',
-    '朗读',
-  ];
-
-  const CODE_COPY_LABEL_PARTS = [
-    'copy code',
-    '复制代码',
-    'copy snippet',
-    '复制片段',
-  ];
-
-  const STOP_LABEL_PARTS = [
-    'stop generating',
-    '停止生成',
-    '停止回答',
-    'cancel generation',
-    '取消生成',
-  ];
+  const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
+  const TURN_TEXT_ATTR = 'data-cgpt-local-model-badge-text';
 
   let scanTimer = 0;
 
@@ -77,81 +31,41 @@
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      .${BADGE_ROW_CLASS} {
-        display: flex;
-        align-items: center;
-        min-height: 20px;
-        margin-top: 2px;
-        color: var(--text-secondary, #9b9b9b);
-        font-size: 14px;
-        line-height: 20px;
-        pointer-events: none;
-        user-select: none;
+      [${TOOLBAR_ATTR}="true"] {
+        position: relative !important;
+        overflow: visible !important;
+        margin-bottom: var(--cgpt-local-model-badge-reserve, 22px) !important;
       }
 
-      .${BADGE_TEXT_CLASS} {
+      [${BADGE_ATTR}="true"] {
+        position: absolute;
+        z-index: 4;
+        left: var(--cgpt-local-model-badge-left, 0px);
+        top: var(--cgpt-local-model-badge-top, calc(100% + 1px));
         display: inline-flex;
         align-items: center;
+        min-height: 18px;
+        max-width: min(340px, calc(100vw - 32px));
+        overflow: hidden;
+        color: var(--text-secondary, #9b9b9b);
+        font-size: 14px;
+        line-height: 18px;
+        text-overflow: ellipsis;
         white-space: nowrap;
         opacity: 0.95;
+        pointer-events: none;
+        user-select: none;
       }
     `;
     document.documentElement.appendChild(style);
   }
 
   function normalizeText(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  }
-
-  function getButtonName(button) {
-    return normalizeText([
-      button.getAttribute('data-testid'),
-      button.getAttribute('aria-label'),
-      button.getAttribute('title'),
-      button.textContent,
-    ].filter(Boolean).join(' '));
+    return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
   function isVisible(element) {
-    return Boolean(element.offsetWidth || element.offsetHeight || element.getClientRects().length);
-  }
-
-  function isCodeCopyButton(button, name) {
-    if (CODE_COPY_LABEL_PARTS.some((part) => name.includes(part))) return true;
-
-    const testId = normalizeText(button.getAttribute('data-testid'));
-    if (testId.includes('copy-turn') || testId.includes('turn-action')) return false;
-
-    return Boolean(button.closest('pre, code, [data-code-block], [class*="code-block"]'))
-      && (name === 'copy' || name === '复制');
-  }
-
-  function getAssistantContent(turn) {
-    return turn.querySelector('[data-message-author-role="assistant"]');
-  }
-
-  function isInsideAssistantContent(button, turn) {
-    const content = getAssistantContent(turn);
-    return Boolean(content && content.contains(button));
-  }
-
-  function isKnownActionButton(button, turn, allowInsideContent) {
-    const name = getButtonName(button);
-    if (!name || isCodeCopyButton(button, name)) return false;
-
-    const testId = normalizeText(button.getAttribute('data-testid'));
-    const hasTurnSpecificTestId = ACTION_TEST_ID_PARTS.some((part) => testId.includes(part));
-    if (hasTurnSpecificTestId) return true;
-
-    if (!allowInsideContent && isInsideAssistantContent(button, turn)) return false;
-
-    return ACTION_LABEL_PARTS.some((part) => name.includes(part));
-  }
-
-  function getActionButtons(scope, turn, allowInsideContent = false) {
-    return Array.from(scope.querySelectorAll('button'))
-      .filter((button) => isVisible(button))
-      .filter((button) => isKnownActionButton(button, turn, allowInsideContent));
+    return Boolean(element && (element.offsetWidth || element.offsetHeight || element.getClientRects().length));
   }
 
   function getAssistantTurns() {
@@ -160,7 +74,7 @@
     const seen = new Set();
 
     for (const roleNode of roleNodes) {
-      const turn = roleNode.closest('article, [data-testid^="conversation-turn"], [data-testid*="conversation-turn"]') || roleNode;
+      const turn = roleNode.closest('article, section[data-testid^="conversation-turn"], [data-testid*="conversation-turn"]') || roleNode;
       if (!seen.has(turn)) {
         seen.add(turn);
         turns.push(turn);
@@ -170,124 +84,146 @@
     return turns;
   }
 
-  function countVisibleButtons(element) {
-    return Array.from(element.querySelectorAll('button')).filter((button) => isVisible(button)).length;
+  function getReplyToolbar(turn) {
+    const groups = Array.from(turn.querySelectorAll('[role="group"][aria-label="回复操作"], [role="group"][aria-label*="操作"], [role="group"][aria-label*="action" i], [role="group"][aria-label*="response" i], [role="group"][aria-label*="reply" i], [role="group"][aria-label*="message" i]'))
+      .filter(isVisible);
+
+    return groups.find((group) => getModelButton(group)) || null;
   }
 
-  function compactTextLength(element) {
-    return normalizeText(element.textContent).length;
+  function getModelButton(scope) {
+    const direct = scope.querySelector('button[aria-label="切换模型"], button[aria-label*="模型"], button[aria-label*="model" i]');
+    if (direct && isVisible(direct)) return direct;
+
+    return Array.from(scope.querySelectorAll('button'))
+      .filter(isVisible)
+      .find((button) => {
+        const text = normalizeText([
+          button.getAttribute('aria-label'),
+          button.getAttribute('data-testid'),
+          button.getAttribute('title'),
+        ].join(' ')).toLowerCase();
+        return text.includes('切换模型') || text.includes('switch model') || text.includes('model');
+      }) || null;
   }
 
-  function isToolbarCandidate(element, turn) {
-    if (!element || element === turn || !turn.contains(element)) return false;
-
-    const actionCount = getActionButtons(element, turn).length;
-    const buttonCount = countVisibleButtons(element);
-    const textLength = compactTextLength(element);
-
-    return actionCount >= 1 && buttonCount <= 16 && textLength <= 180;
+  function getTurnForNode(node) {
+    return node?.closest?.('article, section[data-testid^="conversation-turn"], [data-testid*="conversation-turn"]') || null;
   }
 
-  function smallestCommonAncestor(nodes, boundary) {
-    if (!nodes.length) return null;
+  function extractUsageText(text) {
+    const normalized = normalizeText(text);
+    const chineseMatch = normalized.match(/已使用\s+[^重]+?(?:Thinking|思考|GPT[-\w. ]+|o\d[-\w. ]*)/i);
+    if (chineseMatch) return normalizeText(chineseMatch[0]);
 
-    let candidate = nodes[0].parentElement;
-    while (candidate && candidate !== boundary.parentElement) {
-      if (nodes.every((node) => candidate.contains(node))) return candidate;
-      candidate = candidate.parentElement;
+    const englishMatch = normalized.match(/used\s+[^.。]+?(?:Thinking|GPT[-\w. ]+|o\d[-\w. ]*)/i);
+    if (englishMatch) return normalizeText(englishMatch[0]);
+
+    const looseMatch = normalized.match(/已使用\s+(.+)$/i);
+    if (looseMatch) return normalizeText(`已使用 ${looseMatch[1]}`);
+
+    return '';
+  }
+
+  function readVisibleNativeUsageText() {
+    const nodes = Array.from(document.querySelectorAll([
+      '[role="tooltip"]',
+      '[data-radix-popper-content-wrapper]',
+      '[data-state="delayed-open"]',
+      '[data-side]',
+    ].join(','))).filter(isVisible);
+
+    for (const node of nodes) {
+      const usageText = extractUsageText(node.textContent);
+      if (usageText) return usageText;
     }
 
-    return null;
+    return '';
   }
 
-  function findActionToolbar(turn) {
-    let actionButtons = getActionButtons(turn, turn);
+  function createBadge() {
+    const badge = document.createElement('div');
+    badge.setAttribute(BADGE_ATTR, 'true');
+    badge.setAttribute('aria-hidden', 'true');
+    badge.textContent = CONFIG.fallbackText;
+    return badge;
+  }
 
-    if (!actionButtons.length) {
-      actionButtons = getActionButtons(turn, turn, true);
-    }
+  function getTurnUsageText(turn) {
+    return turn.getAttribute(TURN_TEXT_ATTR) || CONFIG.fallbackText;
+  }
 
-    if (!actionButtons.length) return null;
+  function setTurnUsageText(turn, usageText) {
+    const text = normalizeText(usageText);
+    if (text) turn.setAttribute(TURN_TEXT_ATTR, text);
+  }
 
-    if (actionButtons.length >= 2) {
-      const common = smallestCommonAncestor(actionButtons, turn);
-      if (isToolbarCandidate(common, turn)) return common;
-    }
+  function placeBadge(turn, toolbar, button) {
+    let badge = turn.querySelector(`[${BADGE_ATTR}="true"]`);
+    if (!badge) badge = createBadge();
 
-    for (const button of actionButtons) {
-      let current = button.parentElement;
-      let depth = 0;
+    const toolbarRect = toolbar.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const left = Math.max(0, Math.round(buttonRect.left - toolbarRect.left));
+    const top = Math.max(18, Math.round(toolbarRect.height + 1));
 
-      while (current && current !== turn && depth < 8) {
-        const actionCount = getActionButtons(current, turn).length;
-        if (actionCount >= Math.min(2, actionButtons.length) && isToolbarCandidate(current, turn)) {
-          return current;
+    toolbar.setAttribute(TOOLBAR_ATTR, 'true');
+    toolbar.style.setProperty('--cgpt-local-model-badge-left', `${left}px`);
+    toolbar.style.setProperty('--cgpt-local-model-badge-top', `${top}px`);
+    toolbar.style.setProperty('--cgpt-local-model-badge-reserve', '22px');
+
+    const nextText = getTurnUsageText(turn);
+    if (badge.textContent !== nextText) badge.textContent = nextText;
+
+    if (badge.parentElement !== toolbar) toolbar.appendChild(badge);
+  }
+
+  function bindModelButton(turn, button) {
+    if (button.dataset.cgptLocalModelBadgeBound === 'true') return;
+    button.dataset.cgptLocalModelBadgeBound = 'true';
+
+    const updateFromTooltip = () => {
+      window.setTimeout(() => {
+        const usageText = readVisibleNativeUsageText();
+        if (usageText) {
+          setTurnUsageText(turn, usageText);
+          scheduleScan();
         }
+      }, 80);
+    };
 
-        current = current.parentElement;
-        depth += 1;
-      }
-    }
-
-    return actionButtons[0].parentElement;
-  }
-
-  function isPageGenerating() {
-    return Array.from(document.querySelectorAll('button')).some((button) => {
-      const name = getButtonName(button);
-      const testId = normalizeText(button.getAttribute('data-testid'));
-      return STOP_LABEL_PARTS.some((part) => name.includes(part)) || testId.includes('stop');
-    });
-  }
-
-  function createBadgeRow() {
-    const row = document.createElement('div');
-    row.className = BADGE_ROW_CLASS;
-    row.setAttribute(BADGE_ATTR, 'true');
-
-    const text = document.createElement('span');
-    text.className = BADGE_TEXT_CLASS;
-    text.textContent = CONFIG.labelText;
-
-    row.appendChild(text);
-    return row;
+    button.addEventListener('mouseenter', updateFromTooltip, true);
+    button.addEventListener('focus', updateFromTooltip, true);
+    button.addEventListener('pointerenter', updateFromTooltip, true);
   }
 
   function ensureBadge(turn) {
-    const toolbar = findActionToolbar(turn);
+    const toolbar = getReplyToolbar(turn);
     if (!toolbar) return;
 
-    let row = turn.querySelector(`[${BADGE_ATTR}="true"]`);
-    if (!row) row = createBadgeRow();
+    const button = getModelButton(toolbar);
+    if (!button) return;
 
-    const text = row.querySelector(`.${BADGE_TEXT_CLASS}`);
-    if (text && text.textContent !== CONFIG.labelText) {
-      text.textContent = CONFIG.labelText;
-    }
+    bindModelButton(turn, button);
+    placeBadge(turn, toolbar, button);
+  }
 
-    if (row.previousElementSibling !== toolbar) {
-      toolbar.insertAdjacentElement('afterend', row);
+  function cleanupBadges(keptTurns) {
+    const kept = new Set(keptTurns);
+    for (const badge of document.querySelectorAll(`[${BADGE_ATTR}="true"]`)) {
+      const ownerTurn = getTurnForNode(badge);
+      if (ownerTurn && !kept.has(ownerTurn)) badge.remove();
     }
   }
 
   function scan() {
-    if (!document.body) return;
-
     installStyles();
-    if (isPageGenerating()) return;
 
     const turns = getAssistantTurns();
     const targetTurns = CONFIG.onlyLatestAssistant ? turns.slice(-1) : turns;
 
-    for (const turn of targetTurns) {
-      ensureBadge(turn);
-    }
-
-    if (CONFIG.onlyLatestAssistant) {
-      for (const row of document.querySelectorAll(`[${BADGE_ATTR}="true"]`)) {
-        if (!targetTurns.some((turn) => turn.contains(row))) row.remove();
-      }
-    }
+    for (const turn of targetTurns) ensureBadge(turn);
+    if (CONFIG.onlyLatestAssistant) cleanupBadges(targetTurns);
   }
 
   function scheduleScan() {
@@ -302,6 +238,8 @@
   });
 
   window.addEventListener('load', scheduleScan);
+  window.addEventListener('resize', scheduleScan);
+  window.addEventListener('scroll', scheduleScan, { passive: true });
   window.addEventListener('popstate', scheduleScan);
   document.addEventListener('visibilitychange', scheduleScan);
   window.setInterval(scheduleScan, 2000);
