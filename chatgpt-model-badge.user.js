@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         ChatGPT 模型标记：GPT-5.5 Thinking
-// @namespace    local.codex.chatgpt-model-badge
-// @version      1.4.0
+// @name         ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）
+// @namespace    local.codex.chatgpt-model-badge.force-visible
+// @version      1.5.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮下方。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,6 +18,7 @@
     scanDelayMs: 120,
   };
 
+  const SCRIPT_VERSION = '1.5.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -45,6 +46,8 @@
       text-overflow: ellipsis !important;
       white-space: nowrap !important;
       opacity: 0.98 !important;
+      position: static !important;
+      z-index: auto !important;
       pointer-events: none !important;
       user-select: none !important;
     }
@@ -65,6 +68,7 @@
   let latestAssistantUsageTexts = [];
   let observerStarted = false;
 
+  console.info(`[ChatGPT 模型标记] 已运行 v${SCRIPT_VERSION}`);
   hookFetch();
 
   function hookFetch() {
@@ -233,6 +237,7 @@
       (document.head || document.documentElement).appendChild(style);
     }
 
+    style.setAttribute('data-cgpt-local-model-badge-version', SCRIPT_VERSION);
     if (style.textContent !== STYLE_TEXT) {
       style.textContent = STYLE_TEXT;
     }
@@ -409,6 +414,7 @@
     const left = Math.max(0, Math.round(buttonRect.left - toolbarRect.left));
 
     toolbar.setAttribute(TOOLBAR_ATTR, 'true');
+    toolbar.setAttribute('data-cgpt-local-model-badge-version', SCRIPT_VERSION);
     toolbar.style.setProperty('--cgpt-local-model-badge-left', `${left}px`);
     toolbar.style.removeProperty('--cgpt-local-model-badge-top');
     toolbar.style.removeProperty('--cgpt-local-model-badge-reserve');
