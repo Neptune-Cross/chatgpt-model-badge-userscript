@@ -63,18 +63,18 @@ onlyLatestAssistant: true,
 
 脚本只把消息里的实际 `model_slug` 当作接口识别结果，不再使用 `default_model_slug` 或 `parent_model_slug`。这些默认/父模型字段在历史消息里可能只是兜底信息，不能代表这条回复实际使用的模型。
 
-模型名格式化会保留版本小数位，例如 `gpt-5-4-thinking` 会显示为 `GPT-5.4 Thinking`，不会降级成 `GPT-5 Thinking`。o 系列也会保留，例如 `o3` 会显示为 `o3`。
+模型名格式化会保留版本小数位和常见后缀，例如 `gpt-5-4-thinking` 会显示为 `GPT-5.4 Thinking`，`gpt-5-3-instant` 会显示为 `GPT-5.3 Instant`。o 系列也会保留，例如 `o3` 会显示为 `o3`。
 
 已用 Chrome 插件在测试对话里确认：`button[aria-label="切换模型"]` 是 Pro 页面里的正确锚点，原生 tooltip 可以提取出 `已使用 GPT-5.5 Thinking`，脚本会显示为 `GPT-5.5 Thinking`。脚本也兼容普通版可能出现的 `重试`、`重新生成`、`retry`、`regenerate`、`try again` 等按钮名。
 
 脚本会把模型名作为操作按钮工具栏里的一个文本项插入，显示在复制、点赞、重试、更多等按钮的同一行右侧。
 
-如果你之前装过旧版，页面里可能仍在运行旧脚本，页面里会残留 `position: absolute` 的旧样式。新版脚本名是 `ChatGPT 模型标记`，版本是 `2.2.0`，会在运行时强制覆盖旧 style。保存新版后刷新 ChatGPT 页面即可。
+如果你之前装过旧版，页面里可能仍在运行旧脚本，页面里会残留 `position: absolute` 的旧样式。新版脚本名是 `ChatGPT 模型标记`，版本是 `2.3.0`，会在运行时强制覆盖旧 style。保存新版后刷新 ChatGPT 页面即可。
 
 如果仍看不到，打开浏览器控制台检查是否有这一行：
 
 ```text
-[ChatGPT 模型标记] 已运行 v2.2.0
+[ChatGPT 模型标记] 已运行 v2.3.0
 ```
 
 如果没有这行，说明油猴没有在当前 ChatGPT 页面运行这个新脚本，优先检查脚本是否启用、`@match` 是否完整，以及旧脚本是否还单独启用。

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      2.2.0
+// @version      2.3.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮同一行右侧。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,7 +18,7 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '2.2.0';
+  const SCRIPT_VERSION = '2.3.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -228,20 +228,13 @@
     const versionMatch = raw.match(/\bgpt[-_. ]?(\d+)(?:[-_. ]?(\d+))?/i);
     if (versionMatch) {
       const version = versionMatch[2] ? `${versionMatch[1]}.${versionMatch[2]}` : versionMatch[1];
-      const suffixes = [];
-      if (/\bpro\b/i.test(raw)) suffixes.push('Pro');
-      if (/\bthinking\b/i.test(raw)) suffixes.push('Thinking');
-      if (/\breasoning\b/i.test(raw)) suffixes.push('Reasoning');
+      const suffixes = getModelSuffixes(raw, ['pro', 'instant', 'thinking', 'reasoning', 'mini', 'nano']);
       return `GPT-${version}${suffixes.length ? ` ${suffixes.join(' ')}` : ''}`;
     }
 
     const oSeriesMatch = raw.match(/\bo(\d+)\b/i);
     if (oSeriesMatch) {
-      const suffixes = [];
-      if (/\bmini\b/i.test(raw)) suffixes.push('mini');
-      if (/\bpro\b/i.test(raw)) suffixes.push('Pro');
-      if (/\bthinking\b/i.test(raw)) suffixes.push('Thinking');
-      if (/\breasoning\b/i.test(raw)) suffixes.push('Reasoning');
+      const suffixes = getModelSuffixes(raw, ['mini', 'pro', 'instant', 'thinking', 'reasoning', 'nano']);
       return `o${oSeriesMatch[1]}${suffixes.length ? ` ${suffixes.join(' ')}` : ''}`;
     }
 
@@ -253,6 +246,22 @@
       .replace(/\breasoning\b/i, 'Reasoning')
       .replace(/\s+/g, ' ')
       .trim();
+  }
+
+  function getModelSuffixes(raw, allowedSuffixes) {
+    const normalized = normalizeText(raw).toLowerCase();
+    const labels = {
+      instant: 'Instant',
+      mini: 'mini',
+      nano: 'nano',
+      pro: 'Pro',
+      reasoning: 'Reasoning',
+      thinking: 'Thinking',
+    };
+
+    return allowedSuffixes
+      .filter((suffix) => new RegExp(`\\b${suffix}\\b`, 'i').test(normalized))
+      .map((suffix) => labels[suffix] || suffix);
   }
 
   function installStyles() {
