@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      2.0.0
+// @version      2.2.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮同一行右侧。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,7 +18,7 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '2.0.0';
+  const SCRIPT_VERSION = '2.2.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -225,12 +225,25 @@
     const raw = normalizeText(value);
     if (!raw) return '';
 
-    if (/gpt[-_. ]?5[-_. ]?5.*pro.*thinking/i.test(raw)) return 'GPT-5.5 Pro Thinking';
-    if (/gpt[-_. ]?5[-_. ]?5.*thinking.*pro/i.test(raw)) return 'GPT-5.5 Pro Thinking';
-    if (/gpt[-_. ]?5[-_. ]?5.*thinking/i.test(raw)) return 'GPT-5.5 Thinking';
-    if (/gpt[-_. ]?5[-_. ]?5.*pro/i.test(raw)) return 'GPT-5.5 Pro';
-    if (/gpt[-_. ]?5[-_. ]?5/i.test(raw)) return 'GPT-5.5';
-    if (/gpt[-_. ]?5.*thinking/i.test(raw)) return 'GPT-5 Thinking';
+    const versionMatch = raw.match(/\bgpt[-_. ]?(\d+)(?:[-_. ]?(\d+))?/i);
+    if (versionMatch) {
+      const version = versionMatch[2] ? `${versionMatch[1]}.${versionMatch[2]}` : versionMatch[1];
+      const suffixes = [];
+      if (/\bpro\b/i.test(raw)) suffixes.push('Pro');
+      if (/\bthinking\b/i.test(raw)) suffixes.push('Thinking');
+      if (/\breasoning\b/i.test(raw)) suffixes.push('Reasoning');
+      return `GPT-${version}${suffixes.length ? ` ${suffixes.join(' ')}` : ''}`;
+    }
+
+    const oSeriesMatch = raw.match(/\bo(\d+)\b/i);
+    if (oSeriesMatch) {
+      const suffixes = [];
+      if (/\bmini\b/i.test(raw)) suffixes.push('mini');
+      if (/\bpro\b/i.test(raw)) suffixes.push('Pro');
+      if (/\bthinking\b/i.test(raw)) suffixes.push('Thinking');
+      if (/\breasoning\b/i.test(raw)) suffixes.push('Reasoning');
+      return `o${oSeriesMatch[1]}${suffixes.length ? ` ${suffixes.join(' ')}` : ''}`;
+    }
 
     return raw
       .replace(/^gpt/i, 'GPT')
