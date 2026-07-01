@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）
 // @namespace    local.codex.chatgpt-model-badge.force-visible
-// @version      1.7.0
+// @version      1.8.0
 // @description  自动记录 ChatGPT 回复使用的模型，并显示在切换模型/重试按钮下方。
 // @match        https://chatgpt.com/*
 // @match        https://chat.openai.com/*
@@ -18,7 +18,7 @@
     scanDelayMs: 120,
   };
 
-  const SCRIPT_VERSION = '1.7.0';
+  const SCRIPT_VERSION = '1.8.0';
   const STYLE_ID = 'cgpt-local-model-badge-style';
   const BADGE_ATTR = 'data-cgpt-local-model-badge';
   const TOOLBAR_ATTR = 'data-cgpt-local-model-badge-toolbar';
@@ -217,7 +217,7 @@
 
   function getUsageTextFromModelSlug(rawModel) {
     const modelName = formatModelName(rawModel);
-    return modelName ? `已使用 ${modelName}` : '';
+    return modelName;
   }
 
   function formatModelName(value) {
@@ -388,12 +388,18 @@
   function extractUsageText(text) {
     const normalized = normalizeText(text);
     const chineseMatch = normalized.match(/已使用\s+((?:GPT|gpt|O|o)[^。]*?)(?=重试|已使用|$)/i);
-    if (chineseMatch) return normalizeText(`已使用 ${chineseMatch[1]}`);
+    if (chineseMatch) return stripUsagePrefix(chineseMatch[1]);
 
     const englishMatch = normalized.match(/used\s+((?:GPT|gpt|O|o)[^.。]*?)(?=retry|regenerate|used|$)/i);
-    if (englishMatch) return normalizeText(`used ${englishMatch[1]}`);
+    if (englishMatch) return stripUsagePrefix(englishMatch[1]);
 
     return '';
+  }
+
+  function stripUsagePrefix(text) {
+    return normalizeText(text)
+      .replace(/^(?:已使用|使用了|used)\s+/i, '')
+      .trim();
   }
 
   function readVisibleNativeUsageText() {
@@ -429,7 +435,7 @@
       return usageTextByMessageId.get(currentMessageId);
     }
 
-    const text = normalizeText(turn.getAttribute(TURN_TEXT_ATTR));
+    const text = stripUsagePrefix(turn.getAttribute(TURN_TEXT_ATTR));
     const source = normalizeText(turn.getAttribute(TURN_SOURCE_ATTR));
     const storedMessageId = normalizeText(turn.getAttribute(TURN_MESSAGE_ID_ATTR));
     if (text && source && currentMessageId && storedMessageId === currentMessageId) return text;
@@ -440,11 +446,11 @@
   }
 
   function isAmbiguousLegacyText(text) {
-    return /^已使用\s+GPT-5(?:\.5)?$/i.test(text) || /^used\s+GPT-5(?:\.5)?$/i.test(text);
+    return /^(?:已使用\s+|used\s+)?GPT-5(?:\.5)?$/i.test(text);
   }
 
   function setTurnUsageText(turn, usageText, source) {
-    const text = normalizeText(usageText);
+    const text = stripUsagePrefix(usageText);
     const messageId = getTurnMessageId(turn);
     if (!text) {
       clearTurnUsageText(turn);

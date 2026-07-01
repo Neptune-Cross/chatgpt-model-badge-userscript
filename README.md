@@ -1,9 +1,9 @@
 # ChatGPT 回复模型标记
 
-这个脚本会在网页版 ChatGPT 的回复结束后，在“切换模型/重试”按钮下方显示已确认的模型标记，例如：
+这个脚本会在网页版 ChatGPT 的回复结束后，在“切换模型/重试”按钮下方显示已确认的模型名，例如：
 
 ```text
-已使用 GPT-5.5 Thinking
+GPT-5.5 Thinking
 ```
 
 它只是修改你本机浏览器里的页面显示，不会改变实际使用的模型，也不会把信息发送到外部服务。
@@ -51,6 +51,8 @@ onlyLatestAssistant: true,
 已使用 GPT-5.5 Thinking
 ```
 
+脚本会读取这个原生提示，但显示时会去掉 `已使用` 前缀，只保留模型名。
+
 脚本会优先读取当前助手消息 DOM 上的 `data-message-id` 和 `data-message-model-slug`，这样 ChatGPT 虚拟滚动复用 DOM 节点时，模型标记会跟着当前消息重新计算，不会把刚打开页面时的几条标签套到后来滚动出来的历史消息上。
 
 脚本也会在 `document-start` 尽早运行，拦截 ChatGPT 网页自己发起的 `/backend-api/...conversation...` 响应副本，把助手消息的 `metadata.model_slug` 按消息 id 缓存起来作为补充来源。这个过程只读取页面已经收到的响应副本，不读取或保存登录 token，也不会向外部发送数据。
@@ -59,16 +61,16 @@ onlyLatestAssistant: true,
 
 脚本只把消息里的实际 `model_slug` 当作接口识别结果，不再使用 `default_model_slug` 或 `parent_model_slug`。这些默认/父模型字段在历史消息里可能只是兜底信息，不能代表这条回复实际使用的模型。
 
-已用 Chrome 插件在测试对话里确认：`button[aria-label="切换模型"]` 是 Pro 页面里的正确锚点，原生 tooltip 可以提取出 `已使用 GPT-5.5 Thinking`。脚本也兼容普通版可能出现的 `重试`、`重新生成`、`retry`、`regenerate`、`try again` 等按钮名。
+已用 Chrome 插件在测试对话里确认：`button[aria-label="切换模型"]` 是 Pro 页面里的正确锚点，原生 tooltip 可以提取出 `已使用 GPT-5.5 Thinking`，脚本会显示为 `GPT-5.5 Thinking`。脚本也兼容普通版可能出现的 `重试`、`重新生成`、`retry`、`regenerate`、`try again` 等按钮名。
 
 底部最后一条回复容易被输入框盖住，所以脚本现在不是用浮层绝对定位，而是把标记作为操作按钮工具栏的下一行插入，实际占布局高度，更容易稳定显示。
 
-如果你之前装过旧版，页面里可能仍在运行旧脚本，页面里会残留 `position: absolute` 的旧样式。新版脚本名是 `ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）`，版本是 `1.7.0`，会在运行时强制覆盖旧 style。保存新版后刷新 ChatGPT 页面即可。
+如果你之前装过旧版，页面里可能仍在运行旧脚本，页面里会残留 `position: absolute` 的旧样式。新版脚本名是 `ChatGPT 模型标记：GPT-5.5 Thinking（强制显示版）`，版本是 `1.8.0`，会在运行时强制覆盖旧 style。保存新版后刷新 ChatGPT 页面即可。
 
 如果仍看不到，打开浏览器控制台检查是否有这一行：
 
 ```text
-[ChatGPT 模型标记] 已运行 v1.7.0
+[ChatGPT 模型标记] 已运行 v1.8.0
 ```
 
 如果没有这行，说明油猴没有在当前 ChatGPT 页面运行这个新脚本，优先检查脚本是否启用、`@match` 是否完整，以及旧脚本是否还单独启用。
